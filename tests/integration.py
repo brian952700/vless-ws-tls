@@ -137,11 +137,13 @@ def main():
         run('curl', '-fsSL', '--retry', '3', RAW + name, '-o', str(downloaded))
         check('public URL exact checkout: ' + name, downloaded.read_bytes() == (ROOT / name).read_bytes())
 
-    # Start without curl/CA trust or manager dependencies, then execute README exactly.
+    # Follow README: manually install download prerequisites, then use the short command.
     bootstrap = (ROOT / 'README.md').read_text().split('```bash\n', 1)[1].split('\n```', 1)[0]
     run('apt-get', 'purge', '-y', 'curl', 'ca-certificates')
     Path('/etc/ssl/certs/ca-certificates.crt').unlink(missing_ok=True)
     check('minimal system has no curl/jq/socat/cron', all(shutil.which(c) is None for c in ('curl', 'jq', 'socat', 'cron')))
+    run('apt-get', 'update')
+    run('apt-get', 'install', '-y', 'curl', 'ca-certificates', env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))
     child = spawn('bash', ['-c', bootstrap])
     child.expect_exact('请输入域名（已解析到本服务器）：')
     child.sendline('ci.example.test')

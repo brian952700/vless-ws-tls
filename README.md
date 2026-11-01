@@ -9,32 +9,18 @@
 在 Debian 12 或 Debian 13 的 SSH 终端中复制执行：
 
 ```bash
-bash -euo pipefail -c '
-if (( EUID == 0 )); then
-    elevate=()
-else
-    command -v sudo >/dev/null || { echo "请使用 root 运行，或先安装 sudo。" >&2; exit 1; }
-    elevate=(sudo)
-    sudo -v
-fi
-if ! command -v curl >/dev/null || [[ ! -s /etc/ssl/certs/ca-certificates.crt && ! -s /etc/pki/tls/certs/ca-bundle.crt ]]; then
-    if command -v apt-get >/dev/null; then
-        "${elevate[@]}" apt-get update
-        "${elevate[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates
-    elif command -v dnf >/dev/null || command -v yum >/dev/null; then
-        pm=$(command -v dnf || command -v yum)
-        "${elevate[@]}" "$pm" install -y curl ca-certificates
-    else
-        echo "无法自动安装 curl 和 CA 证书：不支持此包管理器。" >&2; exit 1
-    fi
-fi
-curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 https://raw.githubusercontent.com/brian952700/xhttp/main/install.sh | bash
-'
+bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/brian952700/xhttp/main/install.sh | bash'
 ```
 
 支持 root 用户直接运行；普通用户需要 sudo 权限，安装时会提示输入密码。安装入口会下载并检查 `xy.sh`，安装到 `/usr/local/bin/xy`，然后自动打开交互菜单。
 
-上面的整段命令可直接粘贴执行：缺少 curl 或系统 CA 信任库时会自动安装；进入首次安装或选择菜单 1 后，自动安装 jq、OpenSSL、socat、cron 等所需依赖。软件源或网络不可用时会显示错误并停止。普通用户仍需已有 sudo 权限；没有 sudo 时请使用 root。
+如果提示 `curl: command not found`，或系统缺少 CA 证书，请先手动安装，再执行上面的一键命令。Debian 12/13 使用 root 执行（普通用户在命令前加 `sudo`）：
+
+```bash
+apt-get update && apt-get install -y curl ca-certificates
+```
+
+进入首次安装或选择菜单 1 后，仍会自动安装 jq、OpenSSL、socat、cron 等其他依赖。普通用户需要已有 sudo 权限；没有 sudo 时请使用 root。
 
 安装后打开管理菜单：
 
