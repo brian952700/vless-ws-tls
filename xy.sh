@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VLESS + xHTTP + TLS 管理器。主要目标：Debian 12/13 + systemd。
+# VLESS + WebSocket + TLS 管理器。主要目标：Debian 12/13 + systemd。
 # 安装：sudo install -m 0755 xy.sh /usr/local/bin/xy && sudo /usr/local/bin/xy
 # 配置、证书操作有回滚；软件包/核心升级不属于可回滚事务。
 set -uo pipefail
@@ -72,8 +72,8 @@ show_menu() {
         domain=$(cat "$DOMAIN_FILE")
         domain_valid "$domain" || domain='域名记录异常'
     fi
-    section 'XHTTP 节点管理'
-    printf '  '; paint 90 'VLESS · xHTTP · TLS'; printf '\n\n'
+    section 'WebSocket 节点管理'
+    printf '  '; paint 90 'VLESS · WebSocket · TLS'; printf '\n\n'
     field '服务状态' "$state" "$tone"
     field '当前域名' "$domain" 35
     printf '\n'
@@ -143,12 +143,12 @@ managed_config() {
     jq -e --arg cert "$CERT" --arg key "$KEY" '
         (.inbounds | length) == 1 and
         .inbounds[0].protocol == "vless" and
-        .inbounds[0].streamSettings.network == "xhttp" and
+        .inbounds[0].streamSettings.network == "ws" and
         .inbounds[0].streamSettings.security == "tls" and
         .inbounds[0].streamSettings.tlsSettings.certificates[0].certificateFile == $cert and
         .inbounds[0].streamSettings.tlsSettings.certificates[0].keyFile == $key and
         (.inbounds[0].settings.clients | type == "array" and length > 0)
-    ' "$CONFIG" >/dev/null || die '配置不是此脚本支持的单入口 VLESS+xHTTP+TLS 格式，已停止，未覆盖配置。'
+    ' "$CONFIG" >/dev/null || die '配置不是此脚本支持的单入口 VLESS+WebSocket+TLS 格式，已停止，未覆盖配置。'
 }
 
 domain_valid() {
@@ -364,13 +364,13 @@ install_xray() (
         PORT=$((10#$PORT))
         (( PORT >= 1 && PORT <= 65535 && PORT != 80 )) || die '端口须为 1–65535，且保留 80 给证书验证。'
         [[ -z $(ss -H -ltn "sport = :$PORT") ]] || die "TCP $PORT 已被占用。"
-        ask XPATH 'xHTTP 路径 [/]：'; XPATH=${XPATH:-/}
+        ask XPATH 'WebSocket 路径 [/]：'; XPATH=${XPATH:-/}
         [[ $XPATH == /* && $XPATH != *[[:space:]]* && $XPATH != *\?* && $XPATH != *\#* ]] || die '路径须以 / 开头，且不包含空白、? 或 #。'
         UUID=$(new_uuid)
         jq -n --argjson port "$PORT" --arg id "$UUID" --arg path "$XPATH" --arg cert "$CERT" --arg key "$KEY" '
           {log:{loglevel:"warning"},inbounds:[{port:$port,protocol:"vless",
           settings:{clients:[{id:$id,email:"admin"}],decryption:"none"},
-          streamSettings:{network:"xhttp",security:"tls",xhttpSettings:{path:$path},
+          streamSettings:{network:"ws",security:"tls",wsSettings:{path:$path},
           tlsSettings:{certificates:[{certificateFile:$cert,keyFile:$key}]}}}],
           outbounds:[{protocol:"freedom"}]}
         ' > "$work/candidate.json"
@@ -577,21 +577,21 @@ print_link() {
     local domain port path
     domain=$(cat "$DOMAIN_FILE") || return
     port=$(jq -r '.inbounds[0].port' "$CONFIG") || return
-    path=$(jq -r '.inbounds[0].streamSettings.xhttpSettings.path' "$CONFIG") || return
+    path=$(jq -r '.inbounds[0].streamSettings.wsSettings.path' "$CONFIG") || return
     local link
-    link="vless://$2@$domain:$port?encryption=none&security=tls&sni=$(uri "$domain")&type=xhttp&path=$(uri "$path")#$(uri "$1")"
+    link="vless://$2@$domain:$port?encryption=none&security=tls&sni=$(uri "$domain")&type=ws&path=$(uri "$path")#$(uri "$1")"
     section '节点信息'
     field '用户名' "$1" 94
     field '服务器地址' "$domain" 35
     field '端口' "$port" 94
-    field '传输方式' 'xHTTP' 94
+    field '传输方式' 'WebSocket' 94
     field '路径' "$path" 94
     field 'TLS 域名' "$domain" 35
     field 'UUID' "$2" 94
     printf '\n  '; paint 36 '导入链接：'; printf '\n\n'
     # 链接独立一行，无缩进或装饰字符；复制后可直接导入。
     paint 32 "$link"
-    printf '\n\n  '; paint 90 '请复制上方链接，导入支持 xHTTP 的客户端。'; printf '\n\n'
+    printf '\n\n  '; paint 90 '请复制上方链接，导入支持 WebSocket 的客户端。'; printf '\n\n'
 }
 
 list_users() (

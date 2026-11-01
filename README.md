@@ -1,4 +1,4 @@
-# xy：VLESS + xHTTP + TLS 管理脚本
+# xy：VLESS + WebSocket + TLS 管理脚本
 
 提供安装/更新、添加用户、删除用户、查看用户及链接、彻底卸载、重启 Xray 服务、更新域名及证书、退出八项菜单。首次运行且不存在配置时自动进入安装流程。
 
@@ -9,7 +9,7 @@
 在 Debian 12 或 Debian 13 的 SSH 终端中复制执行：
 
 ```bash
-bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/brian952700/xhttp/main/install.sh | bash'
+bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/brian952700/vless-ws-tls/main/install.sh | bash'
 ```
 
 支持 root 用户直接运行；普通用户需要 sudo 权限，安装时会提示输入密码。安装入口会下载并检查 `xy.sh`，安装到 `/usr/local/bin/xy`，然后自动打开交互菜单。
@@ -30,7 +30,7 @@ sudo xy
 
 root 用户直接输入 `xy` 即可。再次执行一键安装命令会更新管理脚本并打开菜单，不会清空用户；如需安装/更新 Xray 环境，在菜单选择 1。
 
-[查看安装入口 install.sh](https://github.com/brian952700/xhttp/blob/main/install.sh) · [查看主脚本 xy.sh](https://github.com/brian952700/xhttp/blob/main/xy.sh)
+[查看安装入口 install.sh](https://github.com/brian952700/vless-ws-tls/blob/main/install.sh) · [查看主脚本 xy.sh](https://github.com/brian952700/vless-ws-tls/blob/main/xy.sh)
 
 ### 手动安装（可选）
 
@@ -44,7 +44,7 @@ sudo /usr/local/bin/xy
 
 如果已经是 root，可省略 `sudo`。文件是 UTF-8、LF 换行；不要用 `sh xy.sh`。主脚本 `xy.sh` 需要交互输入，不能直接通过管道执行；上面的一键安装入口 `install.sh` 已单独将菜单连接到终端。
 
-首次安装填写域名、监听端口和 xHTTP 路径，默认端口 443，默认路径 `/`。初始用户仍为 `admin`，UUID 从 Linux 内核随机 UUID 接口获取。安装后将输出的 `vless://` 链接导入支持 VLESS、xHTTP、TLS 的客户端。
+首次安装填写域名、监听端口和 WebSocket 路径，默认端口 443，默认路径 `/`。初始用户仍为 `admin`，UUID 从 Linux 内核随机 UUID 接口获取。安装后将输出的 `vless://` 链接导入支持 VLESS、WebSocket、TLS 的客户端。
 
 域名 A/AAAA 记录需正确指向服务器；有 AAAA 记录时，IPv6 也必须可达。安全组和防火墙需允许公网 TCP 80（证书申请及续期）以及选定的节点 TCP 端口。脚本不会自动修改防火墙。80 端口不能用作节点监听端口，因为 standalone 证书验证需要它。服务器还需能够访问 Debian 软件源、GitHub 和证书签发服务。
 
@@ -55,7 +55,7 @@ sudo /usr/local/bin/xy
 - **6. 重启 Xray 服务**：先以实际服务身份校验配置，重启后检查运行状态。重启会短暂中断连接。
 - **7. 更新域名及证书**：输入新域名，或留空保留当前域名、仅更新证书。保留域名时可选择强制重新签发，默认不强制，避免触发 CA 限额。
 
-新域名的 A/AAAA 记录须指向本服务器，公网 TCP 80 必须可达且未被其他服务占用。确认后申请或复用证书，校验证书域名、公私钥及配置，再部署并重启；失败时尝试恢复原域名、配置、证书及服务状态。用户、UUID、端口和 xHTTP 路径保留。更换域名成功后，请将输出的新链接重新导入客户端。
+新域名的 A/AAAA 记录须指向本服务器，公网 TCP 80 必须可达且未被其他服务占用。确认后申请或复用证书，校验证书域名、公私钥及配置，再部署并重启；失败时尝试恢复原域名、配置、证书及服务状态。用户、UUID、端口和 WebSocket 路径保留。更换域名成功后，请将输出的新链接重新导入客户端。
 
 每个域名单独暂存证书，续期回调只部署当前域名，防止旧域名续期覆盖新证书。成功切换后停止旧域名续期，并在显示新链接后询问“是否清理旧域名证书？[y/N]”，默认保留。请先确认客户端使用新域名可以连接，再选择 y；清理会删除旧域名所用 ACME 证书存档目录和独立暂存目录，之后切回需重新申请证书。保留共享 acme.sh 环境、其他域名证书和新域名续期任务，不修改 DNS。只更新同一域名的证书或部署失败时不提供清理；停止续期失败、路径异常时拒绝清理。已有安装重新执行本页一键安装命令即可更新菜单，无需重装 Xray。
 
@@ -99,7 +99,7 @@ sudo journalctl -u xray -n 50 --no-pager
 
 续期回调日志在 `/var/log/xray_cron_error.log`；专用 ACME 任务日志在 `/var/log/xy-acme.log`。首次安装或升级选择 1 后，可添加一个临时用户，用客户端验证实际连接，再删除该用户验证管理流程。
 
-当前验证记录：2026-10-31，Debian 12 amd64 已通过完整集成测试，使用真实 systemd PID 1 和 Xray 26.10.29。[查看测试运行](https://github.com/brian952700/xhttp/actions/runs/41163876774)。覆盖一键安装、用户管理、重启、真实 VLESS+xHTTP+TLS 本地代理传输、更新域名及证书、旧证书清理、失败回滚和卸载。自动测试已扩展为 Debian 12/13 矩阵，后续相关代码修改会同时验证两个系统。公网 ACME 签发仍使用测试替身，限制见下文。
+复制前的 xHTTP 版本验证记录（不代表当前 WebSocket 版本）：2026-10-31，Debian 12 amd64 已通过完整集成测试，使用真实 systemd PID 1 和 Xray 26.10.29。[查看测试运行](https://github.com/brian952700/xhttp/actions/runs/41163876774)。覆盖一键安装、用户管理、重启、真实 VLESS+xHTTP+TLS 本地代理传输、更新域名及证书、旧证书清理、失败回滚和卸载。自动测试已扩展为 Debian 12/13 矩阵，后续相关代码修改会同时验证两个系统。公网 ACME 签发仍使用测试替身，限制见下文。
 
 历史验证记录：2026-09-13 已通过 GitHub Actions 安装与集成验证（第 2 次尝试）。该记录来自迁移前的仓库，不代表本仓库当前版本的验证结果。测试版本为 `6fda876`，环境为 Debian 13 amd64 容器、真实 systemd PID 1，实际下载并运行 Xray 26.3.27。
 
@@ -116,7 +116,7 @@ sudo journalctl -u xray -n 50 --no-pager
 
 证书测试使用自签名证书和 ACME 测试替身，**未验证公网 ACME 签发、真实定时续期、域名解析或 VPS 防火墙**。首次正式部署仍需使用自己的域名完成证书申请和外部客户端连接验证。CI 中普通用户使用免密 sudo；未覆盖交互输入 sudo 密码。
 
-后续修改脚本或测试文件会自动触发验证，也可在 [Actions 页面](https://github.com/brian952700/xhttp/actions/workflows/debian13.yml) 手动运行。刚推送后 GitHub Raw 缓存可能短暂返回旧脚本，此时版本一致性检查会失败；待缓存更新后重新运行，检查仍会严格核对下载内容。
+后续修改脚本或测试文件会自动触发验证，也可在 [Actions 页面](https://github.com/brian952700/vless-ws-tls/actions/workflows/debian13.yml) 手动运行。刚推送后 GitHub Raw 缓存可能短暂返回旧脚本，此时版本一致性检查会失败；待缓存更新后重新运行，检查仍会严格核对下载内容。
 
 回滚范围是本脚本部署的配置和证书，不包括 apt/dnf 软件包、Xray 核心二进制或 acme.sh 升级。服务重启会短暂中断连接；检查通过不等于零中断。多文件替换无法保证突然断电或 SIGKILL 时完整回滚；若自动恢复失败，脚本会显示并保留备份目录。健康检查验证启动后服务仍在运行，不替代客户端端到端验证。
 

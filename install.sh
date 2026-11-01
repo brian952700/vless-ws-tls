@@ -6,13 +6,13 @@ main() (
     set -euo pipefail
     umask 077
     export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    local url='https://raw.githubusercontent.com/brian952700/xhttp/main/xy.sh'
+    local url='https://raw.githubusercontent.com/brian952700/vless-ws-tls/main/xy.sh'
     local target=/usr/local/bin/xy temp
     local cyan= reset=
     if [[ -t 1 && ! ${NO_COLOR+x} && ${TERM:-dumb} != dumb ]]; then
         cyan=$'\033[36m'; reset=$'\033[0m'
     fi
-    printf '\n  %sXHTTP 管理脚本安装%s\n\n' "$cyan" "$reset"
+    printf '\n  %sWebSocket 管理脚本安装%s\n\n' "$cyan" "$reset"
     local -a elevate=()
 
     [[ $(uname -s) == Linux && -d /run/systemd/system ]] || {
