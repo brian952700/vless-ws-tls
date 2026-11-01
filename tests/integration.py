@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 
 import pexpect
 
@@ -21,7 +22,7 @@ CONFIG = Path('/usr/local/etc/xray/config.json')
 CERT = Path('/etc/xray-cert/server.crt')
 KEY = Path('/etc/xray-cert/server.key')
 FIXTURE = Path('/etc/xray-cert/acme/ci.example.test_ecc')
-RAW = 'https://raw.githubusercontent.com/brian952700/xhttp/main/'
+RAW = 'https://raw.githubusercontent.com/brian952700/vless-ws-tls/main/'
 MENU = '请选择 [1-8]：'
 PAUSE = '按 Enter 返回菜单…'
 
@@ -91,8 +92,8 @@ def proxy_test(uuid, domain='ci.example.test'):
         'outbounds': [{'protocol': 'vless', 'settings': {'vnext': [{
             'address': '127.0.0.1', 'port': 8443,
             'users': [{'id': uuid, 'encryption': 'none'}]}]},
-            'streamSettings': {'network': 'xhttp', 'security': 'tls',
-                'xhttpSettings': {'path': '/ci'},
+            'streamSettings': {'network': 'ws', 'security': 'tls',
+                'wsSettings': {'path': '/ci'},
                 # Self-signed certificate is only used in this local CI test.
                 'tlsSettings': {'serverName': domain, 'pinnedPeerCertSha256': cert_pin}}}]
     }
@@ -106,7 +107,7 @@ def proxy_test(uuid, domain='ci.example.test'):
                     '--socks5-hostname', '127.0.0.1:10808', 'http://127.0.0.1:19080/',
                     check=False, capture_output=True)
                 if response.returncode == 0:
-                    check('VLESS+xHTTP+TLS transfers HTTP via SOCKS', response.stdout == 'xy-ci-ok\n')
+                    check('VLESS+WebSocket+TLS transfers HTTP via SOCKS', response.stdout == 'xy-ci-ok\n')
                     return
                 time.sleep(1)
             raise AssertionError('Local proxy failed: ' + response.stderr + Path('/tmp/ci-client.log').read_text())
@@ -149,7 +150,7 @@ def main():
     child.sendline('ci.example.test')
     child.expect_exact('监听端口 [443]：')
     child.sendline('8443')
-    child.expect_exact('xHTTP 路径 [/]：')
+    child.expect_exact('WebSocket 路径 [/]：')
     child.sendline('/ci')
     child.expect_exact('安装/更新完成；证书续期回调已注册。')
     resume(child)
@@ -166,6 +167,10 @@ def main():
     plain = manager('print_link admin ' + admin, capture_output=True).stdout
     check('redirected node output has no ANSI codes', '\x1b' not in plain)
     link = next(line for line in plain.splitlines() if line.startswith('vless://'))
+    query = parse_qs(urlsplit(link).query)
+    check('import link selects WebSocket, TLS, SNI and configured path',
+          query.get('type') == ['ws'] and query.get('security') == ['tls']
+          and query.get('sni') == ['ci.example.test'] and query.get('path') == ['/ci'])
     check('node fields grouped and link stands alone', all(label in plain for label in
           ('用户名', '服务器地址', '端口', '传输方式', '路径', 'TLS 域名', 'UUID', '导入链接')))
 
