@@ -160,6 +160,43 @@ def main():
     check('independent renewal cron installed', Path('/etc/cron.d/xy-acme').is_file())
     admin = content()['inbounds'][0]['settings']['clients'][0]['id']
 
+    # Presentation checks use real PTYs; links must stay identical when copied.
+    plain = manager('print_link admin ' + admin, capture_output=True).stdout
+    check('redirected node output has no ANSI codes', '\x1b' not in plain)
+    link = next(line for line in plain.splitlines() if line.startswith('vless://'))
+    check('node fields grouped and link stands alone', all(label in plain for label in
+          ('用户名', '服务器地址', '端口', '传输方式', '路径', 'TLS 域名', 'UUID', '导入链接')))
+
+    def terminal_output(code, extra=None):
+        env = dict(os.environ, TERM='xterm-256color')
+        env.pop('NO_COLOR', None)
+        env.update(extra or {})
+        terminal = pexpect.spawn('bash', ['-c', 'source /usr/local/bin/xy\n' + code],
+                                 encoding='utf-8', timeout=30, env=env)
+        terminal.expect(pexpect.EOF)
+        output = terminal.before
+        terminal.close()
+        return output, terminal.exitstatus
+
+    colored, rc = terminal_output('print_link admin ' + admin)
+    check('TTY colors domain pink and link green without altering URI', rc == 0 and
+          '\x1b[35mci.example.test\x1b[0m' in colored and
+          '\x1b[32m' + link + '\x1b[0m' in colored)
+    for extra in ({'NO_COLOR': ''}, {'TERM': 'dumb'}):
+        output, rc = terminal_output('print_link admin ' + admin, extra)
+        check('NO_COLOR/TERM=dumb produces clean copyable link', rc == 0 and
+              '\x1b' not in output and link in output)
+    menu, rc = terminal_output('show_menu')
+    check('menu displays live status/domain and exit last', rc == 0 and '运行中' in menu and
+          'ci.example.test' in menu and menu.index('7. 更新域名及证书') < menu.index('8. 退出') and
+          '\x1b[2J' not in menu)
+    hidden, rc = terminal_output("run_logged bash -c 'echo routine-detail'")
+    check('successful command details hidden in terminal', rc == 0 and 'routine-detail' not in hidden)
+    failed, rc = terminal_output("run_logged bash -c 'echo detailed-failure >&2; exit 23'")
+    check('failed command details and exit status preserved', rc == 23 and 'detailed-failure' in failed)
+    verbose, rc = terminal_output("run_logged bash -c 'echo routine-detail'", {'XY_VERBOSE': '1'})
+    check('verbose mode retains successful command details', rc == 0 and 'routine-detail' in verbose)
+
     username = 'ci "quoted" \\ user #&中文'
     child.sendline('2')
     child.expect_exact('请输入新用户名/邮箱：')

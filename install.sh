@@ -8,6 +8,11 @@ main() (
     export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     local url='https://raw.githubusercontent.com/brian952700/xhttp/main/xy.sh'
     local target=/usr/local/bin/xy temp
+    local cyan= reset=
+    if [[ -t 1 && ! ${NO_COLOR+x} && ${TERM:-dumb} != dumb ]]; then
+        cyan=$'\033[36m'; reset=$'\033[0m'
+    fi
+    printf '\n  %sXHTTP 管理脚本安装%s\n\n' "$cyan" "$reset"
     local -a elevate=()
 
     [[ $(uname -s) == Linux && -d /run/systemd/system ]] || {
@@ -26,7 +31,7 @@ main() (
 
     # 手动下载入口运行时也补齐下载器和 HTTPS 信任库。
     if ! command -v curl >/dev/null || [[ ! -s /etc/ssl/certs/ca-certificates.crt && ! -s /etc/pki/tls/certs/ca-bundle.crt ]]; then
-        printf '正在安装下载所需依赖（curl、CA 证书）…\n'
+        printf '\n  %s检查下载依赖：安装 curl、CA 证书…%s\n\n' "$cyan" "$reset"
         if command -v apt-get >/dev/null; then
             "${elevate[@]}" apt-get update
             "${elevate[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates
@@ -43,13 +48,13 @@ main() (
     trap 'rm -rf -- "$temp"' EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
-    printf '正在下载 xy 管理脚本…\n'
+    printf '\n  %s正在下载 xy 管理脚本…%s\n\n' "$cyan" "$reset"
     curl --fail --show-error --location --proto '=https' --tlsv1.2 \
         --retry 3 --connect-timeout 20 --max-time 300 "$url" -o "$temp/xy.sh"
     [[ -s $temp/xy.sh ]] || { printf '错误：下载的脚本为空。\n' >&2; exit 1; }
     bash -n "$temp/xy.sh"
     "${elevate[@]}" install -o root -g root -m 0755 "$temp/xy.sh" "$target"
-    printf '安装完成。以后使用 sudo xy（root 用户直接输入 xy）打开菜单。\n'
+    printf '\n  安装完成。以后使用 sudo xy（root 用户直接输入 xy）打开菜单。\n\n'
     "${elevate[@]}" "$target" </dev/tty
 )
 
