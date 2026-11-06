@@ -40,8 +40,60 @@ section() {
     printf '\n  '; paint 36 "$*"
     printf '\n  '; paint 36 '────────────────────────────────'; printf '\n'
 }
-stage() { printf '\n  '; paint 36 "[$1/$2] $3"; printf '\n\n'; }
+stage() {
+    printf '\n  '; paint 36 "[$1/$2] $3"; printf '\n'
+    printf '  '; paint 90 '────────────────────────────────'; printf '\n\n'
+}
 field() { printf '  %-12s ' "$1"; paint "$3" "$2"; printf '\n'; }
+
+# 新安装先收集并确认参数；输入错误留在当前步骤，不退出安装。
+installation_form() {
+    local CONFIRM
+    while true; do
+        section '配置你的节点'
+        say '依次填写以下三项；直接按 Enter 使用提示中的默认值。'
+        say '域名须已解析到本服务器，公网 TCP 80 用于申请证书。'
+        while true; do
+            ask DOMAIN '请输入域名（已解析到本服务器）：'
+            DOMAIN=${DOMAIN,,}
+            domain_valid "$DOMAIN" && break
+            warn '域名格式错误，请使用普通域名或 Punycode，不含协议、端口或路径。'
+        done
+        while true; do
+            ask PORT '监听端口 [443]：'; PORT=${PORT:-443}
+            if [[ $PORT =~ ^[0-9]{1,5}$ ]]; then
+                PORT=$((10#$PORT))
+                if (( PORT >= 1 && PORT <= 65535 && PORT != 80 )); then
+                    if ! command -v ss >/dev/null || [[ -z $(ss -H -ltn "sport = :$PORT") ]]; then break; fi
+                    warn "TCP $PORT 已被占用，请选择其他端口。"
+                    continue
+                fi
+            fi
+            warn '端口须为 1–65535 的整数；80 保留给证书验证。'
+        done
+        while true; do
+            ask XPATH 'WebSocket 路径 [/]：'; XPATH=${XPATH:-/}
+            [[ $XPATH == /* && $XPATH != *[[:space:]]* && $XPATH != *\?* && $XPATH != *\#* ]] && break
+            warn '路径须以 / 开头，且不包含空白、? 或 #。'
+        done
+        section '确认安装信息'
+        field '协议' 'VLESS + WS + TLS' 94
+        field '域名' "$DOMAIN" 35
+        field '监听端口' "$PORT" 94
+        field 'WS 路径' "$XPATH" 94
+        field '证书方式' 'ACME 自动申请 / 续期' 90
+        say '首次安装用户：admin；安装后显示专属导入链接。'
+        while true; do
+            ask CONFIRM '确认开始安装？[Y/n]（r 返回修改）：'
+            case $CONFIRM in
+                ''|[Yy]) return 0;;
+                [Nn]) say '已取消安装，可在菜单选择 1 重新开始。'; return 1;;
+                [Rr]) break;;
+                *) warn '请输入 y 确认、n 取消或 r 返回修改。';;
+            esac
+        done
+    done
+}
 
 # 只包装外部命令，避免改变 shell 函数中的失败语义。
 # 终端收起成功命令的重复输出，失败完整显示；日志/XY_VERBOSE=1 保留输出。
@@ -53,9 +105,14 @@ run_logged() (
     trap 'exit 130' INT
     trap 'exit 143' TERM
     "$@" >"$output" 2>&1 || rc=$?
+    # 交互界面收起的输出保留为仅 root 可读的日志，便于事后排查。
+    if (( EUID == 0 )); then
+        { printf '\n[%s] %s (exit %s)\n' "$(date '+%F %T')" "$1" "$rc"; cat "$output"; } >>/var/log/xy-install.log
+    fi
     if (( rc != 0 )); then
         error "执行失败（退出码 $rc），详细输出：" >&2
         cat "$output" >&2
+        if (( EUID == 0 )); then say '详细日志：/var/log/xy-install.log' >&2; fi
     fi
     exit "$rc"
 )
@@ -91,7 +148,7 @@ show_menu() {
 
 new_uuid() { cat /proc/sys/kernel/random/uuid; }
 uri() { jq -rn --arg value "$1" '$value | @uri'; }
-download() { curl --fail --show-error --location --proto '=https' --tlsv1.2 --retry 3 --connect-timeout 20 --max-time 300 "$1" -o "$2"; }
+download() { curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 --connect-timeout 20 --max-time 300 "$1" -o "$2"; }
 lock() { install -d -o root -g root -m 0700 /run/xy; exec 9>"$LOCK"; flock -w 120 9 || die '另一项操作仍在进行，请稍后再试。'; }
 
 platform() {
@@ -330,10 +387,15 @@ prepare_certificate() {
 install_xray() (
     set -e
     section '安装 / 更新环境'
+    local work existing=0 PORT XPATH UUID
+    if [[ ! -f $CONFIG ]]; then
+        installation_form || exit 0
+    else
+        say '更新将保留现有用户、UUID、域名、端口和路径。'
+    fi
     stage 1 4 '检查系统及依赖…'
     dependencies
     lock
-    local work existing=0 PORT XPATH UUID
     work=$(mktemp -d)
     trap 'rm -rf -- "$work"' EXIT
     [[ -f $CONFIG ]] && existing=1
@@ -356,16 +418,7 @@ install_xray() (
         cp "$CONFIG" "$work/candidate.json"
         say '已有配置：保留全部用户、UUID、端口和路径。'
     else
-        ask DOMAIN '请输入域名（已解析到本服务器）：'
-        DOMAIN=${DOMAIN,,}
-        domain_valid "$DOMAIN" || die '域名格式错误，请使用普通域名或 Punycode，不含协议/端口/路径。'
-        ask PORT '监听端口 [443]：'; PORT=${PORT:-443}
-        [[ $PORT =~ ^[0-9]{1,5}$ ]] || die '端口必须是 1–65535 的整数。'
-        PORT=$((10#$PORT))
-        (( PORT >= 1 && PORT <= 65535 && PORT != 80 )) || die '端口须为 1–65535，且保留 80 给证书验证。'
         [[ -z $(ss -H -ltn "sport = :$PORT") ]] || die "TCP $PORT 已被占用。"
-        ask XPATH 'WebSocket 路径 [/]：'; XPATH=${XPATH:-/}
-        [[ $XPATH == /* && $XPATH != *[[:space:]]* && $XPATH != *\?* && $XPATH != *\#* ]] || die '路径须以 / 开头，且不包含空白、? 或 #。'
         UUID=$(new_uuid)
         jq -n --argjson port "$PORT" --arg id "$UUID" --arg path "$XPATH" --arg cert "$CERT" --arg key "$KEY" '
           {log:{loglevel:"warning"},inbounds:[{port:$port,protocol:"vless",
@@ -382,6 +435,11 @@ install_xray() (
     apply_config "$work/candidate.json" yes
     systemctl enable xray
     success '安装/更新完成；证书续期回调已注册。'
+    section '你的节点已就绪'
+    field '服务状态' '运行中 · 已设置开机启动' 32
+    field '证书续期' '已注册自动续期' 32
+    field '管理菜单' 'sudo xy（root 用户输入 xy）' 94
+    say '下一步：复制下方完整链接，在客户端导入并测试连接。'
     list_users
 )
 
