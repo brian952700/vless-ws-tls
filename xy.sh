@@ -29,10 +29,16 @@ success() { printf '\n  '; paint 32 "✓ $*"; printf '\n\n'; }
 warn() { printf '\n  '; paint 33 "$*"; printf '\n\n'; }
 error() { printf '\n  '; paint 31 "$*"; printf '\n\n'; }
 die() { error "错误：$*" >&2; exit 1; }
-prompt() { printf '\n  '; paint 33 "$1"; }
+prompt() {
+    if color_enabled; then
+        printf '\n  \033[%sm%s\033[0m' "${2:-33}" "$1"
+    else
+        printf '\n  %s' "$1"
+    fi
+}
 ask() { prompt "$2"; read -r "$1" || die '输入已结束。'; }
 pause() {
-    printf '\n  '; paint 90 '按 Enter 返回菜单…'
+    prompt '按 Enter 返回菜单…' 90
     read -r _ || exit 0
     printf '\n'
 }
@@ -129,21 +135,31 @@ show_menu() {
         domain=$(cat "$DOMAIN_FILE")
         domain_valid "$domain" || domain='域名记录异常'
     fi
-    section 'WebSocket 节点管理'
-    printf '  '; paint 90 'VLESS · WebSocket · TLS'; printf '\n\n'
-    field '服务状态' "$state" "$tone"
-    field '当前域名' "$domain" 35
-    printf '\n'
-    say '1. 安装/更新环境（保留现有配置）'
-    say '2. 添加用户'
-    say '3. 删除用户'
-    say '4. 查看所有用户及链接'
-    printf '\n'
-    say '5. 彻底卸载'
-    say '6. 重启 Xray 服务'
-    say '7. 更新域名及证书'
-    printf '\n'
-    say '8. 退出'
+    local heading='' muted='' status='' address='' reset=''
+    if color_enabled; then
+        heading=$'\033[36m'
+        muted=$'\033[90m'
+        printf -v status '\033[%sm' "$tone"
+        address=$'\033[35m'
+        reset=$'\033[0m'
+    fi
+
+    # 一次写出整屏菜单，避免 SSH 终端分段渲染。
+    printf '\n  %s%s\n  %s%s\n  %s%s%s\n\n  %-12s %s%s%s\n  %-12s %s%s%s\n\n%s\n' \
+        "$heading" 'WebSocket 节点管理' '────────────────────────────────' "$reset" \
+        "$muted" 'VLESS · WebSocket · TLS' "$reset" \
+        '服务状态' "$status" "$state" "$reset" \
+        '当前域名' "$address" "$domain" "$reset" \
+        '  1. 安装/更新环境（保留现有配置）
+  2. 添加用户
+  3. 删除用户
+  4. 查看所有用户及链接
+
+  5. 彻底卸载
+  6. 重启 Xray 服务
+  7. 更新域名及证书
+
+  8. 退出'
 }
 
 new_uuid() { cat /proc/sys/kernel/random/uuid; }
